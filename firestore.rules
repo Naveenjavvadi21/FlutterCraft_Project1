@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Authentication helper
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Users collection:
+    // Any authenticated user can read profiles (for contact search, avatars, presence)
+    // Only the user can create or update their own profile document
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(userId);
+      allow delete: if false;
+    }
+
+    // Chat rooms collection:
+    // Only authenticated members can read and interact with rooms
+    match /chatRooms/{roomId} {
+      allow read: if isAuthenticated() && (request.auth.uid in resource.data.members);
+      
+      // Creating a room: caller must be among members
+      allow create: if isAuthenticated() && (request.auth.uid in request.resource.data.members);
+      
+      // Updating room metadata (last message, typing status, unread counts): caller must be a member
+      allow update: if isAuthenticated() && (request.auth.uid in resource.data.members);
+      allow delete: if false;
+
+      // Real-time messages subcollection:
+      match /messages/{messageId} {
+        // Must belong to the room to read messages
+        allow read: if isAuthenticated() && 
+          (request.auth.uid in get(/databases/$(database)/documents/chatRooms/$(roomId)).data.members);
+
+        // Only room member can send messages, and senderId must match auth.uid
+        allow create: if isAuthenticated() &&
+          request.resource.data.senderId == request.auth.uid &&
+          (request.auth.uid in get(/databases/$(database)/documents/chatRooms/$(roomId)).data.members);
+
+        // Room members can update read status
+        allow update: if isAuthenticated() &&
+          (request.auth.uid in get(/databases/$(database)/documents/chatRooms/$(roomId)).data.members);
+
+        allow delete: if false;
+      }
+    }
+  }
+}

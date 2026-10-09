@@ -1,0 +1,29 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Profile photos:
+    // Any authenticated user can view avatars
+    // Only the owner can upload/update their avatar (max 5MB)
+    match /profile_images/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                   request.auth.uid == userId &&
+                   request.resource.size < 5 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/.*');
+    }
+
+    // Chat images:
+    // Authenticated users with valid image MIME types (max 15MB)
+    match /chat_images/{roomId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() &&
+                   request.resource.size < 15 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/.*');
+    }
+  }
+}
